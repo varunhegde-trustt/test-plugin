@@ -5,6 +5,10 @@
 
     <depends>com.intellij.modules.platform</depends>
 
+    <extensions defaultExtensionNs="com.intellij">
+        <applicationService serviceImplementation="com.trustt.SettingsState"/>
+    </extensions>
+
     <actions>
         <action id="GenerateJavaTests"
                 class="com.trustt.GenerateTestsAction"

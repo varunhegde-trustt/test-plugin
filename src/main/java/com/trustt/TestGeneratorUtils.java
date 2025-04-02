@@ -3,7 +3,7 @@ package com.trustt;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.vfs.VirtualFile;
 
-import java.io.File;
+
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 

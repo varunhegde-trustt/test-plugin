@@ -11,7 +11,6 @@ import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.openapi.vfs.VirtualFileVisitor;
 import org.jetbrains.annotations.NotNull;
 import org.json.JSONArray;
-import org.json.JSONException;
 import org.json.JSONObject;
 
 import java.io.*;
@@ -22,14 +21,31 @@ import java.util.*;
 
 public class GenerateTestsAction extends AnAction {
 
-    private static final String OPENAI_API_KEY = "";
-
     @Override
     public void actionPerformed(@NotNull AnActionEvent e) {
         Project project = e.getProject();
         if (project == null) {
             Messages.showErrorDialog("No open project found", "Error");
             return;
+        }
+
+        SettingsState settings = SettingsState.getInstance();
+        String apiKey = settings.openAiApiKey;
+
+        if (apiKey == null || apiKey.isBlank()) {
+            apiKey = Messages.showInputDialog(
+                    project,
+                    "Enter your OpenAI API Key:",
+                    "OpenAI API Key Required",
+                    Messages.getQuestionIcon()
+            );
+
+            if (apiKey == null || apiKey.isBlank()) {
+                Messages.showErrorDialog("API Key is required to proceed.", "Error");
+                return;
+            }
+
+            settings.openAiApiKey = apiKey;
         }
 
         VirtualFile selectedFolder = FileChooser.chooseFile(
@@ -60,7 +76,7 @@ public class GenerateTestsAction extends AnAction {
 
         for (VirtualFile file : javaFiles) {
             try {
-                processJavaFile(project, file);
+                processJavaFile(project, file, apiKey);
             } catch (Exception ex) {
                 Messages.showErrorDialog("❌ Failed: " + ex.getMessage(), "Error");
                 ex.printStackTrace();
@@ -70,14 +86,20 @@ public class GenerateTestsAction extends AnAction {
         Messages.showInfoMessage("✅ Test generation completed!", "Success");
     }
 
-    private void processJavaFile(Project project, VirtualFile file) throws Exception {
-        String className = file.getNameWithoutExtension();
-        String content = new String(file.contentsToByteArray(), StandardCharsets.UTF_8);
-        String testCode = generateTestWithOpenAI(content);
 
+    private void processJavaFile(Project project, VirtualFile file, String apiKey) throws Exception {
+        String content = new String(file.contentsToByteArray(), StandardCharsets.UTF_8);
         String testPath = TestGeneratorUtils.getTestPath(file, project);
         File testFile = new File(testPath);
+
+        if (testFile.exists()) {
+            System.out.println("⏭️ Skipped existing test: " + testFile.getAbsolutePath());
+            return;
+        }
+
+        String testCode = generateTestWithOpenAI(content, apiKey);
         testFile.getParentFile().mkdirs();
+
         try (FileWriter writer = new FileWriter(testFile)) {
             writer.write(testCode);
         }
@@ -85,7 +107,8 @@ public class GenerateTestsAction extends AnAction {
         System.out.println("✅ Generated test: " + testFile.getAbsolutePath());
     }
 
-    private String generateTestWithOpenAI(String javaCode) throws Exception {
+
+    private String generateTestWithOpenAI(String javaCode, String apiKey) throws Exception {
         String prompt = "Generate JUnit 5 test cases with full coverage for the following class:\n\n" +
                 "Requirements:\n" +
                 "- Ensure 100% test coverage for all methods, including private, protected, and public methods.\n" +
@@ -113,7 +136,7 @@ public class GenerateTestsAction extends AnAction {
         HttpURLConnection conn = (HttpURLConnection) url.openConnection();
         conn.setRequestMethod("POST");
         conn.setDoOutput(true);
-        conn.setRequestProperty("Authorization", "Bearer " + OPENAI_API_KEY);
+        conn.setRequestProperty("Authorization", "Bearer " + apiKey);
         conn.setRequestProperty("Content-Type", "application/json");
 
         JSONObject body = new JSONObject();
@@ -134,13 +157,8 @@ public class GenerateTestsAction extends AnAction {
         String response = new String(is.readAllBytes(), StandardCharsets.UTF_8);
 
         JSONObject responseJson = new JSONObject(response);
-        if (!responseJson.has("choices")) {
-            throw new JSONException("Response does not contain 'choices'");
-        }
-
         JSONArray choices = responseJson.getJSONArray("choices");
-        JSONObject message = choices.getJSONObject(0).getJSONObject("message");
-        String content = message.getString("content");
+        String content = choices.getJSONObject(0).getJSONObject("message").getString("content");
 
         return TestGeneratorUtils.extractJavaCodeBlock(content);
     }
