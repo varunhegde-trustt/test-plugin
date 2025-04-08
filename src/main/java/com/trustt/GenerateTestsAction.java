@@ -58,25 +58,25 @@ public class GenerateTestsAction extends AnAction {
             return;
         }
 
-        List<VirtualFile> javaFiles = new ArrayList<>();
+        List<VirtualFile> sourceFiles = new ArrayList<>();
         VfsUtil.visitChildrenRecursively(selectedFolder, new VirtualFileVisitor<>() {
             @Override
             public boolean visitFile(@NotNull VirtualFile file) {
-                if (!file.isDirectory() && file.getName().endsWith(".java")) {
-                    javaFiles.add(file);
+                if (!file.isDirectory() && (file.getName().endsWith(".java") || file.getName().endsWith(".kt"))) {
+                    sourceFiles.add(file);
                 }
                 return true;
             }
         });
 
-        if (javaFiles.isEmpty()) {
-            Messages.showErrorDialog("No Java files found", "Error");
+        if (sourceFiles.isEmpty()) {
+            Messages.showErrorDialog("No Java or Kotlin files found", "Error");
             return;
         }
 
-        for (VirtualFile file : javaFiles) {
+        for (VirtualFile file : sourceFiles) {
             try {
-                processJavaFile(project, file, apiKey);
+                processSourceFile(project, file, apiKey);
             } catch (Exception ex) {
                 Messages.showErrorDialog("❌ Failed: " + ex.getMessage(), "Error");
                 ex.printStackTrace();
@@ -86,8 +86,7 @@ public class GenerateTestsAction extends AnAction {
         Messages.showInfoMessage("✅ Test generation completed!", "Success");
     }
 
-
-    private void processJavaFile(Project project, VirtualFile file, String apiKey) throws Exception {
+    private void processSourceFile(Project project, VirtualFile file, String apiKey) throws Exception {
         String content = new String(file.contentsToByteArray(), StandardCharsets.UTF_8);
         String testPath = TestGeneratorUtils.getTestPath(file, project);
         File testFile = new File(testPath);
@@ -97,7 +96,7 @@ public class GenerateTestsAction extends AnAction {
             return;
         }
 
-        String testCode = generateTestWithOpenAI(content, apiKey);
+        String testCode = generateTestWithOpenAI(content, apiKey, file.getName().endsWith(".kt"));
         testFile.getParentFile().mkdirs();
 
         try (FileWriter writer = new FileWriter(testFile)) {
@@ -107,9 +106,8 @@ public class GenerateTestsAction extends AnAction {
         System.out.println("✅ Generated test: " + testFile.getAbsolutePath());
     }
 
-
-    private String generateTestWithOpenAI(String javaCode, String apiKey) throws Exception {
-        String prompt = "Generate JUnit 5 test cases with full coverage for the following class:\n\n" +
+    private String generateTestWithOpenAI(String sourceCode, String apiKey, boolean isKotlin) throws Exception {
+        String prompt = "Generate JUnit 5 test cases with full coverage for the following " + (isKotlin ? "Kotlin" : "Java") + " class:\n\n" +
                 "Requirements:\n" +
                 "- Ensure 100% test coverage for all methods, including private, protected, and public methods.\n" +
                 "- Mock all dependencies, including @Autowired services, using @Mock and @InjectMocks.\n" +
@@ -130,7 +128,7 @@ public class GenerateTestsAction extends AnAction {
                 "- Check for Proper Exception Handling in Edge Cases:\n" +
                 "  - If an exception is expected but a NullPointerException occurs instead, ensure all required mock values are set properly.\n\n" +
                 "Class under test:\n\n" +
-                javaCode;
+                sourceCode;
 
         URL url = new URL("https://api.openai.com/v1/chat/completions");
         HttpURLConnection conn = (HttpURLConnection) url.openConnection();
@@ -143,7 +141,7 @@ public class GenerateTestsAction extends AnAction {
         body.put("model", "gpt-4");
 
         JSONArray messages = new JSONArray();
-        messages.put(new JSONObject().put("role", "system").put("content", "You are an expert Java test engineer."));
+        messages.put(new JSONObject().put("role", "system").put("content", "You are an expert " + (isKotlin ? "Kotlin" : "Java") + " test engineer."));
         messages.put(new JSONObject().put("role", "user").put("content", prompt));
 
         body.put("messages", messages);
@@ -157,9 +155,10 @@ public class GenerateTestsAction extends AnAction {
         String response = new String(is.readAllBytes(), StandardCharsets.UTF_8);
 
         JSONObject responseJson = new JSONObject(response);
+        System.out.println("Response: " + responseJson.toString(2));
         JSONArray choices = responseJson.getJSONArray("choices");
         String content = choices.getJSONObject(0).getJSONObject("message").getString("content");
 
-        return TestGeneratorUtils.extractJavaCodeBlock(content);
+        return TestGeneratorUtils.extractCodeBlock(content, isKotlin);
     }
 }
