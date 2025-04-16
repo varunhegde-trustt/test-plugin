@@ -130,7 +130,7 @@ public class GenerateTestsAction extends AnAction {
                 "Class under test:\n\n" +
                 sourceCode;
 
-        URL url = new URL("https://api.openai.com/v1/chat/completions");
+        URL url = new URL("https://dev.veri5digital.com/v1/chat/completions");
         HttpURLConnection conn = (HttpURLConnection) url.openConnection();
         conn.setRequestMethod("POST");
         conn.setDoOutput(true);
@@ -138,14 +138,14 @@ public class GenerateTestsAction extends AnAction {
         conn.setRequestProperty("Content-Type", "application/json");
 
         JSONObject body = new JSONObject();
-        body.put("model", "gpt-4");
+        body.put("model", "Trustt_GPT_LLM");
 
         JSONArray messages = new JSONArray();
         messages.put(new JSONObject().put("role", "system").put("content", "You are an expert " + (isKotlin ? "Kotlin" : "Java") + " test engineer."));
         messages.put(new JSONObject().put("role", "user").put("content", prompt));
 
         body.put("messages", messages);
-        body.put("temperature", 0.7);
+        body.put("temperature", 0.1);
 
         try (OutputStream os = conn.getOutputStream()) {
             os.write(body.toString().getBytes(StandardCharsets.UTF_8));
